@@ -1,14 +1,134 @@
-// src/pages/CreateBill.js - แก้ไขให้ตรงกับโครงสร้าง Database + เพิ่มฟีเจอร์ลูกค้าใหม่
-import React, { useState, useEffect } from 'react';
+
+// src/pages/CreateBill.js - Updated v2: single combobox (type-less), inline add-item, delivery/create dates
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, ShoppingCart, User, CreditCard, Calendar, FileText, Save, ArrowLeft, Calculator, Banknote, Building2 } from 'lucide-react';
+import { Plus, Trash2, ShoppingCart, User, CreditCard, FileText, Save, ArrowLeft, Calculator, Building2, Search, Box } from 'lucide-react';
 import { billAPI, customerAPI, employeeAPI, stockAPI, productAPI } from '../services/api';
 import toastService from '../services/ToastService';
+
+/**
+ * Combined combobox: single input + dropdown suggestions (no Enter required).
+ * - Merges stocks + products; displays as list while typing
+ * - Clicking an option triggers onSelect(option)
+ */
+const ComboBox = ({
+  placeholder = 'พิมพ์เพื่อค้นหา...',
+  options = [],
+  onSelect,
+  inputStyle = {},
+  optionItemStyle = {},
+}) => {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  const norm = (s) => (s || '').toString().toLowerCase();
+  const filtered = useMemo(() => {
+    const q = norm(query);
+    if (!q) return options.slice(0, 50);
+    return options.filter(o => norm(o.label).includes(q)).slice(0, 50);
+  }, [options, query]);
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          style={{
+            width: '100%',
+            padding: '12px 36px 12px 12px',
+            border: '2px solid #e5e7eb',
+            borderRadius: '8px',
+            fontSize: '14px',
+            outline: 'none',
+            ...inputStyle
+          }}
+        />
+        <Search size={16} style={{ position: 'absolute', right: 10, top: 12, opacity: 0.6 }} />
+      </div>
+
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          background: 'white',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          marginTop: 6,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+          maxHeight: 280,
+          overflowY: 'auto',
+          zIndex: 20
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: 12, color: '#6b7280', fontSize: 14 }}>ไม่พบรายการที่ตรงกับ “{query}”</div>
+          ) : filtered.map(opt => (
+            <button
+              key={`${opt.type}-${opt.id}`}
+              type="button"
+              onClick={() => {
+                onSelect?.(opt);
+                setQuery(opt.label);
+                setOpen(false);
+              }}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '10px 12px',
+                background: 'white',
+                border: 'none',
+                borderBottom: '1px solid #f3f4f6',
+                cursor: 'pointer',
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr auto',
+                gap: 8,
+                alignItems: 'center',
+                ...optionItemStyle
+              }}
+            >
+              <span style={{ fontSize: 18 }}>{opt.type === 'stock' ? '📦' : '🔧'}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{opt.name}</div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>
+                  {opt.type === 'stock' ? 'วัสดุ/อุปกรณ์' : 'สินค้า'}
+                  {opt.unit ? ` • ${opt.unit}` : ''}
+                  {typeof opt.remaining !== 'undefined' ? ` • คงเหลือ ${opt.remaining}${opt.unit ? ' ' + opt.unit : ''}` : ''}
+                </div>
+              </div>
+              <div style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>
+                ฿{Number(opt.pricePreview || 0).toLocaleString('th-TH')}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const CreateBill = () => {
   const navigate = useNavigate();
 
-  // States หลัก
+  // Master data
   const [customers, setCustomers] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [stocks, setStocks] = useState([]);
@@ -16,7 +136,7 @@ const CreateBill = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Form States
+  // Form state
   const [formData, setFormData] = useState({
     billType: 'ทั่วไป',
     customerId: '',
@@ -27,30 +147,29 @@ const CreateBill = () => {
     vatRate: 0,
     remark: '',
     paymentTerms: '',
-    
-    // ฟิลด์สำหรับการโอนเงิน
+    // bank transfer fields
     bankName: '',
     bankAccount: '',
     accountName: '',
-    
+    // dates
+    deliveryDate: '',
+    createDate: new Date().toISOString().split('T')[0],
     billItems: []
   });
 
-  // States สำหรับ Modal เพิ่มสินค้า
-  const [showAddItem, setShowAddItem] = useState(false);
-  const [selectedType, setSelectedType] = useState('stock');
-  const [selectedItem, setSelectedItem] = useState('');
-  const [quantity, setQuantity] = useState(1);
-  const [customPrice, setCustomPrice] = useState('');
-
-  // States สำหรับเพิ่มลูกค้าใหม่
+  // UI states
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [newCustomer, setNewCustomer] = useState({
-    name: '',
-    phoneNumber: '',
-    address: '',
-    customerType: 'ลูกค้าทั่วไป'
+
+  // Inline "current item" without type selector
+  const [currentItem, setCurrentItem] = useState({
+    type: null, // will be 'stock' or 'product' after select
+    itemId: '',
+    productId: '',
+    quantity: 1,
+    pricePerUnit: 0,
+    itemName: '',
+    unit: ''
   });
 
   useEffect(() => {
@@ -69,8 +188,8 @@ const CreateBill = () => {
 
       setCustomers(customersRes.data || []);
       setEmployees(employeesRes.data || []);
-      setStocks(stocksRes.data || []);
-      setProducts(productsRes.data || []);
+      setStocks((stocksRes.data || []).filter(s => (s.isActive ?? true)));
+      setProducts((productsRes.data || []).filter(p => (p.isActive ?? true)));
     } catch (error) {
       console.error('Error fetching data:', error);
       toastService.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
@@ -79,132 +198,158 @@ const CreateBill = () => {
     }
   };
 
-  // คำนวณยอดรวม
+  // Build unified options for combobox
+  const unifiedOptions = useMemo(() => {
+    const stockOpts = (stocks || []).map(s => ({
+      type: 'stock',
+      id: s.itemId,
+      name: s.itemName,
+      unit: s.unit,
+      remaining: s.amount,
+      pricePreview: s.exportPrice,
+      data: s,
+      label: `${s.itemName} ${s.amount != null ? `(คงเหลือ: ${s.amount}${s.unit ? ' ' + s.unit : ''})` : ''}`.trim()
+    }));
+    const productOpts = (products || []).map(p => ({
+      type: 'product',
+      id: p.productId,
+      name: p.productName,
+      unit: p.unit,
+      remaining: p.amount,
+      // preview use normalPrice; final price chooses by billType
+      pricePreview: p.normalPrice ?? p.partnerPrice,
+      data: p,
+      label: `${p.productName} ${p.amount != null ? `(คงเหลือ: ${p.amount}${p.unit ? ' ' + p.unit : ''})` : ''}`.trim()
+    }));
+    return [...stockOpts, ...productOpts];
+  }, [stocks, products]);
+
+  // Totals
   const calculateTotals = () => {
     const subTotal = formData.billItems.reduce((sum, item) => sum + item.totalPrice, 0);
     const vatAmount = subTotal * (formData.vatRate / 100);
     const grandTotal = subTotal + vatAmount;
-    
     return { subTotal, vatAmount, grandTotal };
   };
 
-  // จัดการการเปลี่ยนแปลงฟอร์ม
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => ({ ...prev, [name]: value }));
 
-    // อัพเดทข้อมูลลูกค้าที่เลือก
     if (name === 'customerId') {
       const customer = customers.find(c => c.customerId === parseInt(value));
-      setSelectedCustomer(customer);
+      setSelectedCustomer(customer || null);
     }
   };
 
-  // จัดการการเปลี่ยนช่องทางการชำระ
   const handlePaymentMethodChange = (e) => {
     const method = e.target.value;
     setFormData(prev => ({
       ...prev,
       paymentMethod: method,
-      // รีเซ็ตข้อมูลธนาคารเมื่อเปลี่ยนจากการโอน
-      ...(method !== 'TRANSFER' && {
-        bankName: '',
-        bankAccount: '',
-        accountName: ''
-      })
+      ...(method !== 'TRANSFER' && { bankName: '', bankAccount: '', accountName: '' })
     }));
   };
 
-  // จัดการการเปลี่ยนแปลงสินค้า
-  const handleItemChange = (e) => {
-    const { name, value } = e.target;
-    setSelectedItem(value);
-
-    if (name === 'itemId' && value) {
-      const stock = stocks.find(s => s.itemId === parseInt(value));
-      if (stock) {
-        setCustomPrice(stock.exportPrice || 0);
-      }
-    } else if (name === 'productId' && value) {
-      const product = products.find(p => p.productId === parseInt(value));
-      if (product) {
-        setCustomPrice(product.normalPrice || 0);
-      }
+  // When a combobox option is selected, fill current item
+  const handleSelectOption = (opt) => {
+    if (!opt) return;
+    if (opt.type === 'stock') {
+      const s = opt.data;
+      setCurrentItem({
+        type: 'stock',
+        itemId: s.itemId,
+        productId: '',
+        quantity: 1,
+        pricePerUnit: Number(s.exportPrice || 0),
+        itemName: s.itemName,
+        unit: s.unit || ''
+      });
+    } else {
+      const p = opt.data;
+      const price = formData.billType === 'ช่าง' ? (p.partnerPrice ?? p.normalPrice ?? 0) : (p.normalPrice ?? p.partnerPrice ?? 0);
+      setCurrentItem({
+        type: 'product',
+        itemId: '',
+        productId: p.productId,
+        quantity: 1,
+        pricePerUnit: Number(price || 0),
+        itemName: p.productName,
+        unit: p.unit || ''
+      });
     }
   };
 
-  // เพิ่มสินค้าเข้าบิล
-  const addItemToBill = () => {
-    if (!selectedItem || quantity <= 0) {
-      toastService.warning('กรุณาเลือกสินค้าและระบุจำนวน');
+  const handleQtyPriceChange = (e) => {
+    const { name, value } = e.target;
+    setCurrentItem(prev => ({
+      ...prev,
+      [name]: name === 'quantity' ? Math.max(1, parseInt(value || '1', 10)) : Number(value || 0)
+    }));
+  };
+
+  const addItemInline = () => {
+    if (!currentItem.type) {
+      toastService.warning('กรุณาเลือกสินค้า/วัสดุจากช่องค้นหา');
       return;
     }
-
-    const selectedData = selectedType === 'stock' 
-      ? stocks.find(s => s.itemId === parseInt(selectedItem))
-      : products.find(p => p.productId === parseInt(selectedItem));
-
-    if (!selectedData) {
-      toastService.error('ไม่พบข้อมูลสินค้า');
+    if (currentItem.quantity <= 0) {
+      toastService.warning('กรุณาระบุจำนวนให้ถูกต้อง');
       return;
     }
-
-    const price = parseFloat(customPrice) || selectedData.exportPrice || selectedData.normalPrice || 0;
-    const totalPrice = quantity * price;
-
+    const totalPrice = currentItem.quantity * currentItem.pricePerUnit;
     const newItem = {
       id: Date.now(),
-      itemId: selectedType === 'stock' ? selectedData.itemId : null,
-      productId: selectedType === 'product' ? selectedData.productId : null,
-      name: selectedData.itemName || selectedData.productName,
-      quantity: parseInt(quantity),
-      pricePerUnit: price,
-      totalPrice: totalPrice,
-      type: selectedType
+      itemId: currentItem.type === 'stock' ? parseInt(currentItem.itemId) : null,
+      productId: currentItem.type === 'product' ? parseInt(currentItem.productId) : null,
+      name: currentItem.itemName,
+      quantity: currentItem.quantity,
+      pricePerUnit: currentItem.pricePerUnit,
+      totalPrice,
+      type: currentItem.type,
+      unit: currentItem.unit || ''
     };
-
-    setFormData(prev => ({
-      ...prev,
-      billItems: [...prev.billItems, newItem]
-    }));
-
-    // รีเซ็ต Modal
-    setSelectedItem('');
-    setQuantity(1);
-    setCustomPrice('');
-    setShowAddItem(false);
-    toastService.success('เพิ่มสินค้าเรียบร้อย');
+    setFormData(prev => ({ ...prev, billItems: [...prev.billItems, newItem] }));
+    setCurrentItem({
+      type: null,
+      itemId: '',
+      productId: '',
+      quantity: 1,
+      pricePerUnit: 0,
+      itemName: '',
+      unit: ''
+    });
+    toastService.success('เพิ่มรายการเรียบร้อย');
   };
 
-  // ลบสินค้าออกจากบิล
-  const removeItemFromBill = (itemId) => {
+  const removeItemFromBill = (rowId) => {
     setFormData(prev => ({
       ...prev,
-      billItems: prev.billItems.filter(item => item.id !== itemId)
+      billItems: prev.billItems.filter(item => item.id !== rowId)
     }));
     toastService.success('ลบสินค้าเรียบร้อย');
   };
 
-  // จัดการลูกค้าใหม่
+  // New customer submit
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    phoneNumber: '',
+    address: '',
+    customerType: 'ลูกค้าทั่วไป'
+  });
   const handleNewCustomerSubmit = async () => {
     if (!newCustomer.name.trim()) {
       toastService.error('กรุณากรอกชื่อลูกค้า');
       return;
     }
-
     try {
       const response = await customerAPI.create(newCustomer);
       const createdCustomer = response.data;
-      
       setCustomers(prev => [...prev, createdCustomer]);
       setFormData(prev => ({ ...prev, customerId: createdCustomer.customerId }));
       setSelectedCustomer(createdCustomer);
       setShowNewCustomerForm(false);
       setNewCustomer({ name: '', phoneNumber: '', address: '', customerType: 'ลูกค้าทั่วไป' });
-      
       toastService.success('เพิ่มลูกค้าใหม่เรียบร้อย');
     } catch (error) {
       console.error('Error creating customer:', error);
@@ -212,22 +357,17 @@ const CreateBill = () => {
     }
   };
 
-  // บันทึกบิล
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // ตรวจสอบข้อมูลพื้นฐาน
     if (!formData.customerId || !formData.employeeId) {
       toastService.warning('กรุณาเลือกลูกค้าและพนักงาน');
       return;
     }
-
     if (formData.billItems.length === 0) {
       toastService.warning('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ');
       return;
     }
-
-    // ตรวจสอบข้อมูลการโอนเงิน
     if (formData.paymentMethod === 'TRANSFER') {
       if (!formData.bankName || !formData.bankAccount || !formData.accountName) {
         toastService.warning('กรุณากรอกข้อมูลธนาคารให้ครบถ้วน');
@@ -237,10 +377,13 @@ const CreateBill = () => {
 
     try {
       setSaving(true);
+      // Append dates to remark to avoid schema change if deliveryDate not in DB
+      const remarkWithDates = [
+        formData.remark,
+        formData.deliveryDate ? `วันที่นัดส่ง: ${formData.deliveryDate}` : null,
+        formData.createDate ? `วันที่สร้างรายการ: ${formData.createDate}` : null
+      ].filter(Boolean).join(' | ');
 
-      const { subTotal, vatAmount, grandTotal } = calculateTotals();
-
-      // เตรียมข้อมูลสำหรับส่ง API
       const billData = {
         billType: formData.billType,
         customerId: parseInt(formData.customerId),
@@ -249,14 +392,11 @@ const CreateBill = () => {
         paymentStatus: formData.paymentStatus,
         dueDate: formData.dueDate || null,
         vatRate: parseFloat(formData.vatRate),
-        remark: formData.remark,
+        remark: remarkWithDates,
         paymentTerms: formData.paymentTerms,
-        
-        // เพิ่มข้อมูลธนาคารในหมายเหตุถ้าเป็นการโอน
         ...(formData.paymentMethod === 'TRANSFER' && {
           paymentTerms: `${formData.paymentTerms ? formData.paymentTerms + ' | ' : ''}ธนาคาร: ${formData.bankName} | บัญชี: ${formData.bankAccount} | ชื่อบัญชี: ${formData.accountName}`
         }),
-
         billItems: formData.billItems.map(item => ({
           itemId: item.itemId,
           productId: item.productId,
@@ -266,7 +406,6 @@ const CreateBill = () => {
       };
 
       const response = await billAPI.create(billData);
-      
       if (response.data) {
         toastService.success('สร้างบิลเรียบร้อย');
         navigate('/bills');
@@ -350,7 +489,7 @@ const CreateBill = () => {
       <form onSubmit={handleSubmit}>
         <div style={{ display: 'grid', gap: '24px' }}>
           
-          {/* ข้อมูลพื้นฐาน */}
+          {/* ข้อมูลพื้นฐาน + วันที่ */}
           <div style={{
             background: 'white',
             padding: '24px',
@@ -423,6 +562,51 @@ const CreateBill = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* วันที่นัดส่ง */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#374151' }}>
+                  วันที่นัดส่ง
+                </label>
+                <input
+                  type="date"
+                  name="deliveryDate"
+                  value={formData.deliveryDate}
+                  onChange={handleInputChange}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    transition: 'border-color 0.2s ease'
+                  }}
+                />
+              </div>
+
+              {/* วันที่สร้างรายการ (แสดงเฉย ๆ) */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#374151' }}>
+                  วันที่สร้างรายการ
+                </label>
+                <input
+                  type="date"
+                  name="createDate"
+                  value={formData.createDate}
+                  readOnly
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    background: '#f9fafb',
+                    color: '#6b7280',
+                    transition: 'border-color 0.2s ease'
+                  }}
+                />
+                <small style={{ color: '#6b7280' }}>ระบบจะบันทึกตามเวลาจริงของฐานข้อมูลด้วย</small>
               </div>
 
             </div>
@@ -947,6 +1131,138 @@ const CreateBill = () => {
 
           </div>
 
+          {/* เพิ่มรายการสินค้า - inline (combobox) */}
+          <div style={{
+            background: 'white',
+            padding: '24px',
+            borderRadius: '16px',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
+            border: '1px solid #e5e7eb'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              marginBottom: '20px' 
+            }}>
+              <h3 style={{ 
+                margin: 0, 
+                fontSize: '18px', 
+                fontWeight: '600',
+                color: '#374151',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <ShoppingCart size={20} />
+                🛒 เพิ่มรายการสินค้า/วัสดุ
+              </h3>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '2fr 1fr 1fr 1fr auto',
+              gap: '16px',
+              alignItems: 'end'
+            }}>
+              {/* ค้นหาและเลือก (combobox) */}
+              <div>
+                <label style={{ display: 'block', marginBottom: 6, fontWeight: 500, color: '#374151' }}>
+                  ค้นหาและเลือกสินค้า/วัสดุ
+                </label>
+                <ComboBox
+                  options={unifiedOptions}
+                  onSelect={handleSelectOption}
+                />
+              </div>
+
+              {/* จำนวน */}
+              <div>
+                <label style={{ display: 'block', marginBottom: 6, fontWeight: 500, color: '#374151' }}>จำนวน</label>
+                <input
+                  type="number"
+                  name="quantity"
+                  value={currentItem.quantity}
+                  onChange={handleQtyPriceChange}
+                  min="1"
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              {/* ราคา/หน่วย */}
+              <div>
+                <label style={{ display: 'block', marginBottom: 6, fontWeight: 500, color: '#374151' }}>ราคา/หน่วย</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="pricePerUnit"
+                  value={currentItem.pricePerUnit}
+                  onChange={handleQtyPriceChange}
+                  min="0"
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                  placeholder="เลือกรายการเพื่ออัตโนมัติ"
+                />
+              </div>
+
+              {/* รวม */}
+              <div>
+                <label style={{ display: 'block', marginBottom: 6, fontWeight: 500, color: '#374151' }}>ราคารวม</label>
+                <input
+                  type="text"
+                  value={`฿${(currentItem.quantity * currentItem.pricePerUnit).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`}
+                  readOnly
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    background: '#f9fafb',
+                    color: '#6b7280'
+                  }}
+                />
+              </div>
+
+              {/* ปุ่มเพิ่ม */}
+              <div>
+                <button
+                  type="button"
+                  onClick={addItemInline}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    border: 'none',
+                    borderRadius: '8px',
+                    background: '#10b981',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}
+                  disabled={!currentItem.type}
+                  title={!currentItem.type ? 'โปรดเลือกสินค้า/วัสดุก่อน' : 'เพิ่มรายการ'}
+                >
+                  <Plus size={16} />
+                  เพิ่ม
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* รายการสินค้า */}
           <div style={{
             background: 'white',
@@ -973,30 +1289,8 @@ const CreateBill = () => {
                 <ShoppingCart size={20} />
                 รายการสินค้า ({formData.billItems.length} รายการ)
               </h3>
-              <button
-                type="button"
-                onClick={() => setShowAddItem(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '12px 20px',
-                  background: 'linear-gradient(135deg, #10b981, #059669)',
-                  border: 'none',
-                  borderRadius: '12px',
-                  color: 'white',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <Plus size={16} />
-                เพิ่มสินค้า
-              </button>
             </div>
 
-            {/* ตารางสินค้า */}
             {formData.billItems.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1025,14 +1319,15 @@ const CreateBill = () => {
                               {item.type === 'stock' ? '📦' : '🔧'}
                             </span>
                             <span style={{ fontWeight: '500' }}>{item.name}</span>
+                            {item.unit ? <span style={{ color: '#6b7280', fontSize: 12 }}>• {item.unit}</span> : null}
                           </div>
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>{item.quantity}</td>
                         <td style={{ padding: '12px', textAlign: 'right' }}>
-                          ฿{item.pricePerUnit.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                          ฿{Number(item.pricePerUnit).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </td>
                         <td style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>
-                          ฿{item.totalPrice.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                          ฿{Number(item.totalPrice).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           <button
@@ -1067,7 +1362,7 @@ const CreateBill = () => {
               }}>
                 <ShoppingCart size={48} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
                 <p style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: '500' }}>ยังไม่มีสินค้าในบิล</p>
-                <p style={{ margin: 0, fontSize: '14px' }}>คลิก "เพิ่มสินค้า" เพื่อเริ่มต้น</p>
+                <p style={{ margin: 0, fontSize: '14px' }}>เพิ่มรายการจากส่วนด้านบน</p>
               </div>
             )}
           </div>
@@ -1224,197 +1519,6 @@ const CreateBill = () => {
 
         </div>
       </form>
-
-      {/* Modal เพิ่มสินค้า */}
-      {showAddItem && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: 'white',
-            borderRadius: '16px',
-            padding: '24px',
-            maxWidth: '500px',
-            width: '90%',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
-            <h3 style={{ 
-              margin: '0 0 20px', 
-              fontSize: '18px', 
-              fontWeight: '600',
-              color: '#374151' 
-            }}>
-              เพิ่มสินค้าเข้าบิล
-            </h3>
-
-            {/* เลือกประเภท */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>ประเภท</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedType('stock');
-                    setSelectedItem('');
-                  }}
-                  style={{
-                    padding: '8px 16px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    background: selectedType === 'stock' ? '#dbeafe' : 'white',
-                    color: selectedType === 'stock' ? '#1d4ed8' : '#6b7280',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500'
-                  }}
-                >
-                  📦 วัสดุ/อุปกรณ์
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedType('product');
-                    setSelectedItem('');
-                  }}
-                  style={{
-                    padding: '8px 16px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    background: selectedType === 'product' ? '#fef3c7' : 'white',
-                    color: selectedType === 'product' ? '#d97706' : '#6b7280',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500'
-                  }}
-                >
-                  🔧 สินค้า
-                </button>
-              </div>
-            </div>
-
-            {/* เลือกสินค้า */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>เลือกสินค้า</label>
-              <select
-                name={selectedType === 'stock' ? 'itemId' : 'productId'}
-                value={selectedItem}
-                onChange={handleItemChange}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '8px',
-                  fontSize: '14px'
-                }}
-              >
-                <option value="">เลือกสินค้า</option>
-                {(selectedType === 'stock' ? stocks : products).map(item => (
-                  <option 
-                    key={selectedType === 'stock' ? item.itemId : item.productId} 
-                    value={selectedType === 'stock' ? item.itemId : item.productId}
-                  >
-                    {selectedType === 'stock' ? item.itemName : item.productName} 
-                    {(item.exportPrice || item.normalPrice) && ` - ฿${(item.exportPrice || item.normalPrice).toLocaleString('th-TH')}`}
-                    {selectedType === 'stock' && item.amount && ` (คงเหลือ: ${item.amount})`}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-              
-              {/* จำนวน */}
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>จำนวน</label>
-                <input
-                  type="number"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                  min="1"
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    fontSize: '14px'
-                  }}
-                />
-              </div>
-
-              {/* ราคาต่อหน่วย */}
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>ราคาต่อหน่วย</label>
-                <input
-                  type="number"
-                  value={customPrice}
-                  onChange={(e) => setCustomPrice(e.target.value)}
-                  placeholder="ราคาอัตโนมัติ"
-                  min="0"
-                  step="0.01"
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    fontSize: '14px'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* ปุ่ม */}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => setShowAddItem(false)}
-                style={{
-                  padding: '10px 20px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  background: '#f3f4f6',
-                  color: '#374151',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={addItemToBill}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '10px 20px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  background: '#10b981',
-                  color: 'white',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                <Plus size={14} />
-                เพิ่ม
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* CSS Animations */}
       <style>
