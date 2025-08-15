@@ -1,80 +1,123 @@
-// src/pages/BillList.js - อัพเดทให้รองรับ VAT และ Payment Methods (แก้ไข Syntax Error แล้ว)
 import React, { useState, useEffect } from 'react';
-import { Eye, Trash2, Search, Package, Calendar, CheckCircle, CreditCard, Percent, FileText, Plus, Filter, Printer, Receipt } from 'lucide-react';
-import { billAPI } from '../services/api';
-import { useNavigate } from 'react-router-dom';
-import toastService from '../services/ToastService';
+import { Eye, Printer, Receipt, Trash2, Search, Package, Calendar, CheckCircle, CreditCard } from 'lucide-react';
 
 const BillList = () => {
-  const navigate = useNavigate();
-
-  // States
-  const [bills, setBills] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // Mock data for demonstration
+  const [bills, setBills] = useState([
+    {
+      billId: 1,
+      createDate: '2024-08-15T10:30:00',
+      customerName: 'บริษัท ABC จำกัด',
+      employeeName: 'สมชาย ใจดี',
+      billType: 'ช่าง',
+      grandTotal: 15000,
+      totalPrice: 15000,
+      vatAmount: 1050,
+      paymentStatus: 'รอชำระ'
+    },
+    {
+      billId: 2,
+      createDate: '2024-08-14T14:20:00',
+      customerName: 'คุณสมหญิง สวยงาม',
+      employeeName: 'สมศรี เก่งจริง',
+      billType: 'ทั่วไป',
+      grandTotal: 8500,
+      totalPrice: 8500,
+      vatAmount: 595,
+      paymentStatus: 'ชำระแล้ว'
+    },
+    {
+      billId: 3,
+      createDate: '2024-08-13T09:15:00',
+      customerName: 'ร้าน XYZ',
+      employeeName: 'สมปอง ขยัน',
+      billType: 'ช่าง',
+      grandTotal: 25000,
+      totalPrice: 25000,
+      vatAmount: 1750,
+      paymentStatus: 'ชำระบางส่วน'
+    }
+  ]);
+  const [filteredBills, setFilteredBills] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ทั้งหมด');
-  const [paymentFilter, setPaymentFilter] = useState('ทั้งหมด');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchBills();
-  }, []);
+    setFilteredBills(bills);
+  }, [bills]);
 
-  const fetchBills = async () => {
-    try {
-      setLoading(true);
-      const response = await billAPI.getAll();
-      setBills(response.data);
-    } catch (error) {
-      console.error('Error fetching bills:', error);
-      toastService.error('เกิดข้อผิดพลาดในการดึงข้อมูลบิล');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    applyFilters();
+  }, [bills, searchTerm, statusFilter]);
+
+  const applyFilters = () => {
+    let filtered = [...bills];
+    
+    if (searchTerm) {
+      filtered = filtered.filter(bill => 
+        bill.billId?.toString().includes(searchTerm) ||
+        bill.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        bill.employeeName?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
-  };
-
-  const handleDeleteBill = async (billId) => {
-    if (!window.confirm('คุณต้องการลบบิลนี้หรือไม่?')) return;
-
-    try {
-      await billAPI.delete(billId);
-      toastService.success('ลบบิลสำเร็จ');
-      fetchBills();
-    } catch (error) {
-      console.error('Error deleting bill:', error);
-      toastService.error('เกิดข้อผิดพลาดในการลบบิล');
+    
+    if (statusFilter !== 'ทั้งหมด') {
+      filtered = filtered.filter(bill => bill.paymentStatus === statusFilter);
     }
+    
+    setFilteredBills(filtered);
   };
 
   const handleViewBill = (billId) => {
-    navigate(`/bills/${billId}`);
+    console.log('View Bill Detail:', billId);
+    // navigate(`/bills/detail/${billId}`);
   };
 
   const handlePrintBill = (billId) => {
-    navigate(`/bills/${billId}/print`);
+    console.log('Print Bill:', billId);
+    // navigate(`/bills/print/${billId}`);
   };
 
   const handleInvoiceStyle = (billId) => {
-    navigate(`/bills/${billId}/invoice`);
+    console.log('Invoice Style:', billId);
+    // navigate(`/bills/invoice/${billId}`);
   };
 
-  // Filter และ Search
-  const filteredBills = bills.filter(bill => {
-    const matchesSearch = !searchTerm || 
-      bill.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      bill.billId?.toString().includes(searchTerm) ||
-      bill.billNumber?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'ทั้งหมด' || bill.paymentStatus === statusFilter;
-    const matchesPayment = paymentFilter === 'ทั้งหมด' || bill.paymentMethod === paymentFilter;
-    
-    return matchesSearch && matchesStatus && matchesPayment;
-  });
+  const handleDeleteBill = async (billId) => {
+    if (window.confirm('คุณต้องการลบบิลนี้หรือไม่?')) {
+      console.log('Delete Bill:', billId);
+      // Remove from local state for demo
+      setBills(bills.filter(b => b.billId !== billId));
+    }
+  };
 
-  const getCount = (status) => status === 'ทั้งหมด' ? 
-    bills.length : bills.filter(b => b.paymentStatus === status).length;
+  const getStatusBadge = (status) => {
+    const variants = {
+      'รอชำระ': { bg: '#fef3c7', color: '#d97706', text: '⏳ รอชำระ' },
+      'ชำระแล้ว': { bg: '#dcfce7', color: '#16a34a', text: '✅ ชำระแล้ว' },
+      'ชำระบางส่วน': { bg: '#e0e7ff', color: '#7c3aed', text: '💜 บางส่วน' },
+      'ยกเลิก': { bg: '#fee2e2', color: '#dc2626', text: '❌ ยกเลิก' }
+    };
 
-  const getPaymentMethodCount = (method) => method === 'ทั้งหมด' ? 
-    bills.length : bills.filter(b => b.paymentMethod === method).length;
+    const variant = variants[status] || variants['รอชำระ'];
+
+    return (
+      <span style={{
+        padding: '4px 12px',
+        borderRadius: '20px',
+        fontSize: '12px',
+        fontWeight: '600',
+        backgroundColor: variant.bg,
+        color: variant.color,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px'
+      }}>
+        {variant.text}
+      </span>
+    );
+  };
 
   // สถิติ
   const stats = {
@@ -94,9 +137,6 @@ const BillList = () => {
     { key: 'ยกเลิก', label: 'ยกเลิก', icon: Trash2, color: '#ef4444' }
   ];
 
-  const paymentMethods = ['ทั้งหมด', 'CASH', 'TRANSFER', 'CREDIT', 'CHEQUE'];
-
-  // Styles
   const cardStyle = {
     backgroundColor: 'white',
     borderRadius: '16px',
@@ -105,80 +145,9 @@ const BillList = () => {
     marginBottom: '24px'
   };
 
-  const buttonStyle = (variant = 'primary') => {
-    const variants = {
-      primary: { backgroundColor: '#3b82f6', color: 'white' },
-      success: { backgroundColor: '#10b981', color: 'white' },
-      outline: { backgroundColor: 'white', color: '#6b7280', border: '2px solid #e5e7eb' }
-    };
-    
-    return {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '8px',
-      padding: '12px 20px',
-      border: 'none',
-      borderRadius: '12px',
-      fontSize: '14px',
-      fontWeight: '600',
-      cursor: 'pointer',
-      transition: 'all 0.2s ease',
-      ...variants[variant]
-    };
-  };
-
-  const getStatusBadge = (status) => {
-    const variants = {
-      'รอชำระ': { bg: '#fef3c7', color: '#d97706', text: '⏳ รอชำระ' },
-      'ชำระแล้ว': { bg: '#dcfce7', color: '#16a34a', text: '✅ ชำระแล้ว' },
-      'ชำระบางส่วน': { bg: '#e0e7ff', color: '#7c3aed', text: '💳 บางส่วน' },
-      'เครดิต': { bg: '#dbeafe', color: '#2563eb', text: '🏦 เครดิต' },
-      'ยกเลิก': { bg: '#fee2e2', color: '#dc2626', text: '❌ ยกเลิก' }
-    };
-    
-    const variant = variants[status] || variants['รอชำระ'];
-    
-    return (
-      <span style={{
-        padding: '6px 12px',
-        borderRadius: '20px',
-        fontSize: '12px',
-        fontWeight: '600',
-        backgroundColor: variant.bg,
-        color: variant.color
-      }}>
-        {variant.text}
-      </span>
-    );
-  };
-
-  const getPaymentMethodBadge = (method) => {
-    const variants = {
-      'CASH': { bg: '#f0fdf4', color: '#16a34a', text: '💵 เงินสด' },
-      'TRANSFER': { bg: '#eff6ff', color: '#2563eb', text: '💳 โอนเงิน' },
-      'CREDIT': { bg: '#fdf4ff', color: '#a855f7', text: '🏦 เครดิต' },
-      'CHEQUE': { bg: '#fffbeb', color: '#d97706', text: '📄 เช็ค' }
-    };
-    
-    const variant = variants[method] || { bg: '#f3f4f6', color: '#6b7280', text: method };
-    
-    return (
-      <span style={{
-        padding: '4px 8px',
-        borderRadius: '8px',
-        fontSize: '11px',
-        fontWeight: '500',
-        backgroundColor: variant.bg,
-        color: variant.color
-      }}>
-        {variant.text}
-      </span>
-    );
-  };
-
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ height: '50vh' }}>
+      <div style={{ padding: '40px', textAlign: 'center' }}>
         <div className="spinner-border text-primary" role="status">
           <span className="visually-hidden">กำลังโหลด...</span>
         </div>
@@ -187,105 +156,57 @@ const BillList = () => {
   }
 
   return (
-    <div style={{ padding: '32px', backgroundColor: '#f9fafb', minHeight: '100vh' }}>
+    <div style={{ padding: '24px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ 
-            padding: '16px', 
-            backgroundColor: '#dbeafe', 
-            borderRadius: '16px',
-            border: '2px solid #3b82f6'
-          }}>
-            <Package size={32} style={{ color: '#3b82f6' }} />
-          </div>
+      <div style={{ marginBottom: '32px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div>
-            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937', margin: 0 }}>
+            <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#1f2937', margin: 0 }}>
               📋 รายการบิล
             </h1>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '16px' }}>
-              จัดการบิลและใบเสร็จทั้งหมด
+            <p style={{ color: '#6b7280', margin: '8px 0 0 0' }}>
+              จัดการและติดตามสถานะบิลทั้งหมด
             </p>
           </div>
-        </div>
-        
-        <button 
-          onClick={() => navigate('/bills/create')}
-          style={buttonStyle('success')}
-        >
-          <Plus size={16} />
-          สร้างบิลใหม่
-        </button>
-      </div>
-
-      {/* Statistics Cards */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-        gap: '20px', 
-        marginBottom: '24px' 
-      }}>
-        <div style={{
-          ...cardStyle,
-          padding: '20px',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <Package size={24} />
-            <h3 style={{ margin: 0, fontSize: '16px' }}>บิลทั้งหมด</h3>
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold' }}>{stats.total}</div>
-          <div style={{ fontSize: '14px', opacity: 0.9 }}>
-            ฿{stats.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-          </div>
+          <button
+            onClick={() => console.log('Create new bill')}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            ➕ สร้างบิลใหม่
+          </button>
         </div>
 
-        <div style={{
-          ...cardStyle,
-          padding: '20px',
-          background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <Calendar size={24} />
-            <h3 style={{ margin: 0, fontSize: '16px' }}>รอชำระ</h3>
+        {/* Stats Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ ...cardStyle, padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontSize: '24px', fontWeight: '700', color: '#3b82f6' }}>{stats.total}</div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>บิลทั้งหมด</div>
           </div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold' }}>{stats.pending}</div>
-          <div style={{ fontSize: '14px', opacity: 0.9 }}>
-            {((stats.pending / (stats.total || 1)) * 100).toFixed(1)}% ของทั้งหมด
+          <div style={{ ...cardStyle, padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>{stats.pending}</div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>รอชำระ</div>
           </div>
-        </div>
-
-        <div style={{
-          ...cardStyle,
-          padding: '20px',
-          background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <CheckCircle size={24} />
-            <h3 style={{ margin: 0, fontSize: '16px' }}>ชำระแล้ว</h3>
+          <div style={{ ...cardStyle, padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>{stats.paid}</div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>ชำระแล้ว</div>
           </div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold' }}>{stats.paid}</div>
-          <div style={{ fontSize: '14px', opacity: 0.9 }}>
-            ฿{stats.paidAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-          </div>
-        </div>
-
-        <div style={{
-          ...cardStyle,
-          padding: '20px',
-          background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <CreditCard size={24} />
-            <h3 style={{ margin: 0, fontSize: '16px' }}>บางส่วน</h3>
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold' }}>{stats.partial}</div>
-          <div style={{ fontSize: '14px', opacity: 0.9 }}>
-            ต้องติดตาม
+          <div style={{ ...cardStyle, padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontSize: '24px', fontWeight: '700', color: '#3b82f6' }}>
+              ฿{stats.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+            </div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>ยอดรวมทั้งหมด</div>
           </div>
         </div>
       </div>
@@ -293,122 +214,67 @@ const BillList = () => {
       {/* Filters */}
       <div style={cardStyle}>
         <div style={{ padding: '24px' }}>
-          {/* Status Filter */}
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#374151' }}>
-              📊 กรองตามสถานะ
-            </h3>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {filterTabs.map(tab => (
+          {/* Filter Tabs */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            {filterTabs.map(tab => {
+              const Icon = tab.icon;
+              const isActive = statusFilter === tab.key;
+              return (
                 <button
                   key={tab.key}
                   onClick={() => setStatusFilter(tab.key)}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 16px',
-                    border: statusFilter === tab.key ? `2px solid ${tab.color}` : '2px solid #e5e7eb',
-                    backgroundColor: statusFilter === tab.key ? tab.color : 'white',
-                    color: statusFilter === tab.key ? 'white' : '#6b7280',
+                    padding: '10px 16px',
+                    border: `2px solid ${isActive ? tab.color : '#e5e7eb'}`,
+                    backgroundColor: isActive ? tab.color : 'white',
+                    color: isActive ? 'white' : '#6b7280',
                     borderRadius: '12px',
                     fontSize: '14px',
-                    fontWeight: '500',
+                    fontWeight: '600',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <tab.icon size={16} />
-                  {tab.label}
-                  <span style={{
-                    backgroundColor: statusFilter === tab.key ? 'rgba(255,255,255,0.2)' : '#f3f4f6',
-                    color: statusFilter === tab.key ? 'white' : '#6b7280',
-                    padding: '2px 6px',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: '600'
-                  }}>
-                    {getCount(tab.key)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Payment Method Filter */}
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#374151' }}>
-              💳 กรองตามวิธีการชำระ
-            </h3>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {paymentMethods.map(method => (
-                <button
-                  key={method}
-                  onClick={() => setPaymentFilter(method)}
-                  style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    padding: '6px 12px',
-                    border: paymentFilter === method ? '2px solid #3b82f6' : '2px solid #e5e7eb',
-                    backgroundColor: paymentFilter === method ? '#3b82f6' : 'white',
-                    color: paymentFilter === method ? 'white' : '#6b7280',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
+                    gap: '6px',
                     transition: 'all 0.2s ease'
                   }}
                 >
-                  {method === 'ทั้งหมด' ? 'ทั้งหมด' : getPaymentMethodBadge(method).props.children}
-                  <span style={{
-                    backgroundColor: paymentFilter === method ? 'rgba(255,255,255,0.2)' : '#f3f4f6',
-                    color: paymentFilter === method ? 'white' : '#6b7280',
-                    padding: '2px 6px',
-                    borderRadius: '6px',
-                    fontSize: '11px'
-                  }}>
-                    {getPaymentMethodCount(method)}
-                  </span>
+                  <Icon size={16} />
+                  {tab.label}
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
 
           {/* Search */}
-          <div style={{ position: 'relative' }}>
-            <Search size={18} style={{ 
-              position: 'absolute', 
-              left: '16px', 
-              top: '50%', 
-              transform: 'translateY(-50%)', 
-              color: '#6b7280' 
-            }} />
+          <div style={{ position: 'relative', maxWidth: '400px' }}>
+            <Search 
+              size={20} 
+              style={{ 
+                position: 'absolute', 
+                left: '12px', 
+                top: '50%', 
+                transform: 'translateY(-50%)', 
+                color: '#9ca3af' 
+              }} 
+            />
             <input
               type="text"
-              placeholder="ค้นหาบิล, ลูกค้า, เลขที่บิล..."
+              placeholder="ค้นหาเลขที่บิล, ชื่อลูกค้า, พนักงาน..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
                 width: '100%',
-                padding: '12px 16px 12px 48px',
+                padding: '12px 12px 12px 44px',
                 border: '2px solid #e5e7eb',
                 borderRadius: '12px',
                 fontSize: '14px',
-                outline: 'none',
-                transition: 'all 0.2s ease'
+                outline: 'none'
               }}
             />
-            <div style={{ 
-              position: 'absolute', 
-              right: '16px', 
-              top: '50%', 
-              transform: 'translateY(-50%)',
-              fontSize: '12px',
-              color: '#6b7280'
-            }}>
-              {filteredBills.length} รายการ
-            </div>
+          </div>
+
+          <div style={{ marginTop: '16px', color: '#6b7280', fontSize: '14px' }}>
+            📊 แสดงผล {filteredBills.length} รายการ
           </div>
         </div>
       </div>
@@ -461,15 +327,6 @@ const BillList = () => {
                   fontSize: '14px', 
                   fontWeight: '600', 
                   color: '#374151',
-                  textAlign: 'center'
-                }}>
-                  💳 การชำระ
-                </th>
-                <th style={{ 
-                  padding: '16px', 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
-                  color: '#374151',
                   textAlign: 'right'
                 }}>
                   💰 ยอดรวม
@@ -498,58 +355,36 @@ const BillList = () => {
             <tbody>
               {filteredBills.length === 0 ? (
                 <tr>
-                  <td colSpan="8" style={{ 
-                    textAlign: 'center', 
-                    padding: '40px', 
-                    color: '#6b7280',
-                    fontSize: '16px'
-                  }}>
-                    📭 ไม่พบข้อมูลบิลที่ตรงกับเงื่อนไข
+                  <td colSpan="7" style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
+                    <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px' }}>ไม่พบข้อมูลบิล</div>
+                    <div style={{ fontSize: '14px' }}>ลองเปลี่ยนคำค้นหาหรือตัวกรองใหม่</div>
                   </td>
                 </tr>
               ) : (
-                filteredBills.map((bill, index) => (
-                  <tr key={bill.billId} style={{ 
-                    backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb',
-                    transition: 'all 0.2s ease'
-                  }}>
-                    <td style={{ padding: '16px', fontSize: '14px', color: '#374151' }}>
-                      <div style={{ fontWeight: '600' }}>#{bill.billId}</div>
-                      {bill.billNumber && (
-                        <div style={{ fontSize: '12px', color: '#6b7280' }}>{bill.billNumber}</div>
-                      )}
+                filteredBills.map((bill) => (
+                  <tr key={bill.billId} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '16px', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                      #{bill.billId}
                     </td>
                     <td style={{ padding: '16px', fontSize: '14px', color: '#374151' }}>
-                      {new Date(bill.createDate).toLocaleDateString('th-TH', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                      <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                        {new Date(bill.createDate).toLocaleTimeString('th-TH', {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </div>
+                      {new Date(bill.createDate).toLocaleDateString('th-TH')}
                     </td>
                     <td style={{ padding: '16px', fontSize: '14px', color: '#374151' }}>
-                      <div style={{ fontWeight: '600' }}>{bill.customerName}</div>
-                      <div style={{ fontSize: '12px', color: '#6b7280' }}>{bill.billType}</div>
+                      <div style={{ fontWeight: '600' }}>{bill.customerName || 'ไม่ระบุ'}</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>พนักงาน: {bill.employeeName}</div>
                     </td>
                     <td style={{ padding: '16px', textAlign: 'center' }}>
                       <span style={{
-                        padding: '4px 8px',
-                        borderRadius: '8px',
+                        padding: '4px 12px',
+                        borderRadius: '20px',
                         fontSize: '12px',
-                        fontWeight: '500',
+                        fontWeight: '600',
                         backgroundColor: bill.billType === 'ช่าง' ? '#fef3c7' : '#dbeafe',
                         color: bill.billType === 'ช่าง' ? '#d97706' : '#2563eb'
                       }}>
                         {bill.billType === 'ช่าง' ? '🔧 ช่าง' : '👥 ทั่วไป'}
                       </span>
-                    </td>
-                    <td style={{ padding: '16px', textAlign: 'center' }}>
-                      {getPaymentMethodBadge(bill.paymentMethod)}
                     </td>
                     <td style={{ 
                       padding: '16px', 
