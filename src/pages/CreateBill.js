@@ -1,4 +1,4 @@
-// src/pages/CreateBill.js - ปรับปรุงให้มีฟิลด์การโอนเงิน
+// src/pages/CreateBill.js - แก้ไขให้ตรงกับโครงสร้าง Database + เพิ่มฟีเจอร์ลูกค้าใหม่
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, ShoppingCart, User, CreditCard, Calendar, FileText, Save, ArrowLeft, Calculator, Banknote, Building2 } from 'lucide-react';
@@ -28,7 +28,7 @@ const CreateBill = () => {
     remark: '',
     paymentTerms: '',
     
-    // ฟิลด์ใหม่สำหรับการโอนเงิน
+    // ฟิลด์สำหรับการโอนเงิน
     bankName: '',
     bankAccount: '',
     accountName: '',
@@ -42,6 +42,16 @@ const CreateBill = () => {
   const [selectedItem, setSelectedItem] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [customPrice, setCustomPrice] = useState('');
+
+  // States สำหรับเพิ่มลูกค้าใหม่
+  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    phoneNumber: '',
+    address: '',
+    customerType: 'ลูกค้าทั่วไป'
+  });
 
   useEffect(() => {
     fetchInitialData();
@@ -85,6 +95,12 @@ const CreateBill = () => {
       ...prev,
       [name]: value
     }));
+
+    // อัพเดทข้อมูลลูกค้าที่เลือก
+    if (name === 'customerId') {
+      const customer = customers.find(c => c.customerId === parseInt(value));
+      setSelectedCustomer(customer);
+    }
   };
 
   // จัดการการเปลี่ยนช่องทางการชำระ
@@ -100,6 +116,24 @@ const CreateBill = () => {
         accountName: ''
       })
     }));
+  };
+
+  // จัดการการเปลี่ยนแปลงสินค้า
+  const handleItemChange = (e) => {
+    const { name, value } = e.target;
+    setSelectedItem(value);
+
+    if (name === 'itemId' && value) {
+      const stock = stocks.find(s => s.itemId === parseInt(value));
+      if (stock) {
+        setCustomPrice(stock.exportPrice || 0);
+      }
+    } else if (name === 'productId' && value) {
+      const product = products.find(p => p.productId === parseInt(value));
+      if (product) {
+        setCustomPrice(product.normalPrice || 0);
+      }
+    }
   };
 
   // เพิ่มสินค้าเข้าบิล
@@ -152,6 +186,30 @@ const CreateBill = () => {
       billItems: prev.billItems.filter(item => item.id !== itemId)
     }));
     toastService.success('ลบสินค้าเรียบร้อย');
+  };
+
+  // จัดการลูกค้าใหม่
+  const handleNewCustomerSubmit = async () => {
+    if (!newCustomer.name.trim()) {
+      toastService.error('กรุณากรอกชื่อลูกค้า');
+      return;
+    }
+
+    try {
+      const response = await customerAPI.create(newCustomer);
+      const createdCustomer = response.data;
+      
+      setCustomers(prev => [...prev, createdCustomer]);
+      setFormData(prev => ({ ...prev, customerId: createdCustomer.customerId }));
+      setSelectedCustomer(createdCustomer);
+      setShowNewCustomerForm(false);
+      setNewCustomer({ name: '', phoneNumber: '', address: '', customerType: 'ลูกค้าทั่วไป' });
+      
+      toastService.success('เพิ่มลูกค้าใหม่เรียบร้อย');
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      toastService.error('เกิดข้อผิดพลาดในการเพิ่มลูกค้า');
+    }
   };
 
   // บันทึกบิล
@@ -339,34 +397,6 @@ const CreateBill = () => {
                 </select>
               </div>
 
-              {/* ลูกค้า */}
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#374151' }}>
-                  ลูกค้า *
-                </label>
-                <select
-                  name="customerId"
-                  value={formData.customerId}
-                  onChange={handleInputChange}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    transition: 'border-color 0.2s ease'
-                  }}
-                >
-                  <option value="">เลือกลูกค้า</option>
-                  {customers.map(customer => (
-                    <option key={customer.customerId} value={customer.customerId}>
-                      {customer.customerName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               {/* พนักงาน */}
               <div>
                 <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#374151' }}>
@@ -389,13 +419,276 @@ const CreateBill = () => {
                   <option value="">เลือกพนักงาน</option>
                   {employees.map(employee => (
                     <option key={employee.employeeId} value={employee.employeeId}>
-                      {employee.employeeName}
+                      {employee.firstName} {employee.lastName}
                     </option>
                   ))}
                 </select>
               </div>
 
             </div>
+          </div>
+
+          {/* ข้อมูลลูกค้า */}
+          <div style={{
+            background: 'white',
+            padding: '24px',
+            borderRadius: '16px',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
+            border: '1px solid #e5e7eb'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              marginBottom: '20px' 
+            }}>
+              <h3 style={{ 
+                margin: 0, 
+                fontSize: '18px', 
+                fontWeight: '600',
+                color: '#374151',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <User size={20} />
+                ข้อมูลลูกค้า
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowNewCustomerForm(!showNewCustomerForm)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 16px',
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Plus size={16} />
+                เพิ่มลูกค้าใหม่
+              </button>
+            </div>
+
+            {!showNewCustomerForm ? (
+              <>
+                {/* เลือกลูกค้าที่มีอยู่ */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#374151' }}>
+                    เลือกลูกค้า *
+                  </label>
+                  <select
+                    name="customerId"
+                    value={formData.customerId}
+                    onChange={handleInputChange}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      transition: 'border-color 0.2s ease'
+                    }}
+                  >
+                    <option value="">เลือกลูกค้า</option>
+                    {customers.map(customer => (
+                      <option key={customer.customerId} value={customer.customerId}>
+                        {customer.name} - {customer.customerType || 'ลูกค้าทั่วไป'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* แสดงข้อมูลลูกค้าที่เลือก */}
+                {selectedCustomer && (
+                  <div style={{ 
+                    padding: '16px', 
+                    backgroundColor: '#f0f9ff', 
+                    borderRadius: '12px',
+                    border: '2px solid #0ea5e9'
+                  }}>
+                    <h4 style={{ margin: '0 0 12px 0', color: '#0369a1', fontSize: '16px', fontWeight: '600' }}>
+                      ℹ️ ข้อมูลลูกค้าที่เลือก
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                      <div><strong>📝 ชื่อ:</strong> {selectedCustomer.name}</div>
+                      <div><strong>📱 เบอร์โทร:</strong> {selectedCustomer.phoneNumber || 'ไม่ระบุ'}</div>
+                      <div><strong>🏠 ที่อยู่:</strong> {selectedCustomer.address || 'ไม่ระบุ'}</div>
+                      <div><strong>👤 ประเภท:</strong> {selectedCustomer.customerType || 'ลูกค้าทั่วไป'}</div>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              /* ฟอร์มเพิ่มลูกค้าใหม่ */
+              <div style={{ 
+                padding: '24px', 
+                backgroundColor: '#f0fdf4', 
+                borderRadius: '12px',
+                border: '2px solid #10b981'
+              }}>
+                <h4 style={{ margin: '0 0 20px 0', color: '#065f46', fontSize: '18px', fontWeight: '600' }}>
+                  ➕ เพิ่มลูกค้าใหม่
+                </h4>
+                
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
+                  gap: '16px',
+                  marginBottom: '20px'
+                }}>
+                  <div>
+                    <label style={{ 
+                      display: 'block', 
+                      marginBottom: '6px', 
+                      fontWeight: '500', 
+                      color: '#374151'
+                    }}>
+                      📝 ชื่อลูกค้า *
+                    </label>
+                    <input
+                      type="text"
+                      value={newCustomer.name}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        border: '2px solid #10b981',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white'
+                      }}
+                      placeholder="กรอกชื่อลูกค้า"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label style={{ 
+                      display: 'block', 
+                      marginBottom: '6px', 
+                      fontWeight: '500', 
+                      color: '#374151'
+                    }}>
+                      📱 เบอร์โทร
+                    </label>
+                    <input
+                      type="tel"
+                      value={newCustomer.phoneNumber}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        border: '2px solid #10b981',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white'
+                      }}
+                      placeholder="กรอกเบอร์โทร"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label style={{ 
+                      display: 'block', 
+                      marginBottom: '6px', 
+                      fontWeight: '500', 
+                      color: '#374151'
+                    }}>
+                      👤 ประเภทลูกค้า
+                    </label>
+                    <select
+                      value={newCustomer.customerType}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, customerType: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        border: '2px solid #10b981',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white'
+                      }}
+                    >
+                      <option value="ลูกค้าทั่วไป">ลูกค้าทั่วไป</option>
+                      <option value="ช่าง">ช่าง</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '6px', 
+                    fontWeight: '500', 
+                    color: '#374151'
+                  }}>
+                    🏠 ที่อยู่
+                  </label>
+                  <textarea
+                    value={newCustomer.address}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, address: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #10b981',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      minHeight: '80px',
+                      resize: 'vertical',
+                      background: 'white'
+                    }}
+                    placeholder="กรอกที่อยู่"
+                  />
+                </div>
+                
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button 
+                    type="button" 
+                    onClick={handleNewCustomerSubmit} 
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '12px 20px',
+                      background: '#10b981',
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: 'white',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    <Save size={16} />
+                    บันทึกลูกค้า
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowNewCustomerForm(false)} 
+                    style={{
+                      padding: '12px 20px',
+                      background: '#f3f4f6',
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: '#374151',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ข้อมูลการชำระเงิน */}
@@ -1013,8 +1306,9 @@ const CreateBill = () => {
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>เลือกสินค้า</label>
               <select
+                name={selectedType === 'stock' ? 'itemId' : 'productId'}
                 value={selectedItem}
-                onChange={(e) => setSelectedItem(e.target.value)}
+                onChange={handleItemChange}
                 style={{
                   width: '100%',
                   padding: '12px',
