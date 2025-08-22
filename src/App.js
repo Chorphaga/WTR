@@ -15,6 +15,7 @@ import CompanySettings from './pages/CompanySettings';
 import PaymentMethods from './pages/PaymentMethods';
 import PrintReceipt from './pages/PrintReceipt';
 import InvoiceStyleReceipt from './pages/InvoiceStyleReceipt';
+import BillDetail from './pages/BillDetail';
 import Navbar from './components/Navbar';
 import PrivateRoute from './components/PrivateRoute';
 import ToastContainer from './components/ToastContainer';
@@ -249,6 +250,17 @@ function App() {
               </PrivateRoute>
             } />
 
+                 {/* ✨ เพิ่ม Route สำหรับ Invoice Style */}
+            <Route path="/bills/:billId/detail" element={
+              <PrivateRoute>
+                <>
+                  <Navbar />
+                  <BillDetail />
+                </>
+              </PrivateRoute>
+
+            } />
+            
                  {/* ✨ เพิ่ม Route สำหรับพิมพ์ใบเสร็จ */}
             <Route path="/bills/:billId/print" element={
               <PrivateRoute>
