@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect , useCallback } from 'react';
 import { useNavigate } from 'react-router-dom'; // เพิ่ม import นี้
 import { Eye, Printer, Receipt, Trash2, Search, Package, Calendar, CheckCircle, CreditCard } from 'lucide-react';
+import { billAPI } from '../services/api';
+import toastService from '../services/ToastService';
 
-const BillList = () => {
+
+  const BillList = () => {
   const navigate = useNavigate(); // เพิ่มการใช้ useNavigate
 
   // Mock data for demonstration
@@ -46,31 +49,47 @@ const BillList = () => {
   const [statusFilter, setStatusFilter] = useState('ทั้งหมด');
   const [loading, setLoading] = useState(false);
 
+  const fetchBills = async () => {
+  try {
+    setLoading(true);
+    const response = await billAPI.getAll(); // ใช้ API จริง
+    setBills(response.data);
+  } catch (error) {
+    toastService.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+  } finally {
+    setLoading(false);
+  }
+};
+
+useEffect(() => {
+  fetchBills(); // ⬅️ เพิ่มบรรทัดนี้
+}, []);
+
   useEffect(() => {
     setFilteredBills(bills);
   }, [bills]);
 
   useEffect(() => {
-    applyFilters();
-  }, [bills, searchTerm, statusFilter]);
+  applyFilters(); // เพิ่มบรรทัดนี้
+}, [searchTerm, statusFilter, applyFilters]);
 
-  const applyFilters = () => {
-    let filtered = [...bills];
-    
-    if (searchTerm) {
-      filtered = filtered.filter(bill => 
-        bill.billId?.toString().includes(searchTerm) ||
-        bill.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        bill.employeeName?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    if (statusFilter !== 'ทั้งหมด') {
-      filtered = filtered.filter(bill => bill.paymentStatus === statusFilter);
-    }
-    
-    setFilteredBills(filtered);
-  };
+  const applyFilters = useCallback(() => {
+  let filtered = [...bills];
+  
+  if (searchTerm) {
+    filtered = filtered.filter(bill => 
+      bill.billId?.toString().includes(searchTerm) ||
+      bill.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      bill.employeeName?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }
+  
+  if (statusFilter !== 'ทั้งหมด') {
+    filtered = filtered.filter(bill => bill.paymentStatus === statusFilter);
+  }
+  
+  setFilteredBills(filtered);
+}, [bills, searchTerm, statusFilter]);
 
   // ✅ แก้ไขฟังก์ชันการ navigate
   const handleViewBill = (billId) => {
